@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Train Movement Recorder</title>
+
+<style>
+    body {
+        font-family: Arial, sans-serif;
+        text-align: center;
+        background: #f4f6f8;
+        margin: 0;
+        padding: 15px;
+    }
+
+    h1 { margin-bottom: 5px; }
+
+    #timer {
+        font-size: 36px;
+        margin-bottom: 15px;
+        font-weight: bold;
+    }
+
+    .button-layout {
+        display: flex;
+        justify-content: center;
+        gap: 50px;       /* space between EB and WB columns */
+        margin-bottom: 20px;
+    }
+
+    .column {
+        display: flex;
+        flex-direction: column;  /* stack buttons vertically */
+        gap: 12px;               /* space between buttons in a column */
+    }
+
+    button {
+        padding: 14px;
+        font-size: 16px;
+        cursor: pointer;
+        border: none;
+        border-radius: 8px;
+        width: 160px;
+    }
+
+    .eb { background: #1565C0; color: white; }
+    .wb { background: #EF6C00; color: white; }
+    .control { background: #555; color: white; }
+    .danger { background: #c62828; color: white; }
+
+    table {
+        width: 100%;
+        margin-top: 20px;
+        border-collapse: collapse;
+        background: white;
+        font-size: 14px;
+    }
+
+    th, td {
+        padding: 6px;
+        border: 1px solid #ccc;
+    }
+
+    th { background: #eee; }
+</style>
+</head>
+
+<body>
+
+<h1>🚆 Train Movement Recorder</h1>
+<div id="timer">0</div>
+
+<div>
+    Start From (seconds):
+    <input type="number" id="startFrom" placeholder="0">
+    <button class="control" onclick="startTimer()">Start</button>
+    <button class="control" onclick="stopTimer()">Stop</button>
+</div>
+
+<br>
+
+<div class="button-layout">
+    <div class="column">
+        <button class="eb" onclick="logEvent('EB Arrival')">EB Arrival</button>
+        <button class="eb" onclick="logEvent('EB Departure')">EB Departure</button>
+    </div>
+
+    <div class="column">
+        <button class="wb" onclick="logEvent('WB Arrival')">WB Arrival</button>
+        <button class="wb" onclick="logEvent('WB Departure')">WB Departure</button>
+    </div>
+</div>
+
+<div>
+    <button class="control" onclick="exportCSV()">Export CSV</button>
+    <button class="danger" onclick="deleteLast()">Delete Last</button>
+    <button class="control" onclick="resetData()">Reset</button>
+</div>
+
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Event</th>
+<th>Clock Time</th>
+<th>Elapsed (s)</th>
+<th>Interval (s)</th>
+</tr>
+</thead>
+<tbody id="logTable"></tbody>
+</table>
+
+<script>
+let logData = [];
+let running = false;
+let startTimestamp = null;
+let baseElapsed = 0;
+let timerInterval = null;
+
+/* ================= STORAGE ================= */
+function saveData() {
+    const state = {
+        logData,
+        running,
+        startTimestamp,
+        baseElapsed
+    };
+    localStorage.setItem("trainRecorderData", JSON.stringify(state));
+}
+
+function loadData() {
+    const saved = localStorage.getItem("trainRecorderData");
+    if (!saved) return;
+
+    const state = JSON.parse(saved);
+    logData = state.logData || [];
+    running = state.running || false;
+    startTimestamp = state.startTimestamp;
+    baseElapsed = state.baseElapsed || 0;
+
+    updateTable();
+
+    if (running && startTimestamp) {
+        timerInterval = setInterval(updateTimer, 1000);
+    }
+
+    updateTimer();
+}
+
+/* ================= TIMER ================= */
+function getElapsedSeconds() {
+    if (!running) return Math.floor(baseElapsed/1000);
+    return Math.floor((baseElapsed + Date.now() - startTimestamp)/1000);
+}
+
+function updateTimer() {
+    document.getElementById("timer").innerText = getElapsedSeconds();
+}
+
+/* ================= START / STOP ================= */
+function startTimer() {
+    if (running) return;
+
+    let now = Date.now();
+    const startValue = parseInt(document.getElementById("startFrom").value);
+    if (!isNaN(startValue)) {
+        baseElapsed = startValue * 1000;
+        document.getElementById("startFrom").value = "";
+    } else {
+        baseElapsed = 0;
+    }
+
+    startTimestamp = now;
+    running = true;
+
+    // Log start event
+    logEvent("Start", now);
+
+    timerInterval = setInterval(updateTimer, 1000);
+    saveData();
+}
+
+function stopTimer() {
+    if (!running) return;
+
+    baseElapsed += Date.now() - startTimestamp;
+    running = false;
+    clearInterval(timerInterval);
+    saveData();
+}
+
+/* ================= LOGGING ================= */
+function logEvent(label, timestamp = Date.now()) {
+    let elapsed = Math.floor((timestamp - startTimestamp + baseElapsed)/1000);
+
+    // Interval since previous event
+    let interval = 0;
+    if (logData.length > 0) {
+        interval = Math.floor((timestamp - logData[0].timestamp)/1000);
+    }
+
+    const entry = {
+        number: logData.length + 1,
+        label: label,
+        clock: new Date(timestamp).toLocaleTimeString(),
+        elapsed: elapsed,
+        interval: interval,
+        timestamp: timestamp
+    };
+
+    logData.unshift(entry);
+    updateTable();
+    saveData();
+}
+
+function updateTable() {
+    const table = document.getElementById("logTable");
+    table.innerHTML = "";
+
+    logData.forEach((entry, index) => {
+        entry.number = logData.length - index;
+
+        table.innerHTML += `
+            <tr>
+                <td>${entry.number}</td>
+                <td>${entry.label}</td>
+                <td>${entry.clock}</td>
+                <td>${entry.elapsed}</td>
+                <td>${entry.interval}</td>
+            </tr>`;
+    });
+}
+
+/* ================= DELETE ================= */
+function deleteLast() {
+    if (logData.length === 0) return;
+    if (confirm("Delete last entry?")) {
+        logData.shift();
+        updateTable();
+        saveData();
+    }
+}
+
+/* ================= EXPORT ================= */
+function exportCSV() {
+    if (logData.length === 0) return;
+
+    let csv = "Number,Event,Clock Time,Elapsed (s),Interval (s)\n";
+    [...logData].reverse().forEach(e => {
+        csv += `${e.number},${e.label},${e.clock},${e.elapsed},${e.interval}\n`;
+    });
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "train_log.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+/* ================= RESET ================= */
+function resetData() {
+    if (!confirm("Reset everything?")) return;
+
+    logData = [];
+    running = false;
+    baseElapsed = 0;
+    startTimestamp = null;
+    clearInterval(timerInterval);
+    localStorage.removeItem("trainRecorderData");
+
+    document.getElementById("timer").innerText = "0";
+    updateTable();
+}
+
+/* ================= INIT ================= */
+loadData();
+setInterval(updateTimer, 1000);
+</script>
+
+</body>
+</html>
