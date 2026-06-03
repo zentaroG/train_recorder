@@ -22,17 +22,25 @@
         font-weight: bold;
     }
 
+    .toggle-bar {
+        display: flex;
+        justify-content: center;
+        gap: 40px;
+        margin: 10px 0 20px;
+        flex-wrap: wrap;
+    }
+
     .button-layout {
         display: flex;
         justify-content: center;
-        gap: 50px;       /* space between EB and WB columns */
+        gap: 50px;
         margin-bottom: 20px;
     }
 
     .column {
         display: flex;
-        flex-direction: column;  /* stack buttons vertically */
-        gap: 12px;               /* space between buttons in a column */
+        flex-direction: column;
+        gap: 12px;
     }
 
     button {
@@ -60,15 +68,28 @@
     th, td {
         padding: 6px;
         border: 1px solid #ccc;
+        vertical-align: middle;
     }
 
     th { background: #eee; }
+
+    table button {
+        padding: 2px 6px;
+        font-size: 12px;
+        width: auto;
+        margin-left: 4px;
+    }
+
+    select {
+        font-size: 12px;
+    }
 </style>
 </head>
 
 <body>
 
 <h1>🚆 Train Movement Recorder</h1>
+
 <div id="timer">0</div>
 
 <div>
@@ -78,17 +99,27 @@
     <button class="control" onclick="stopTimer()">Stop</button>
 </div>
 
-<br>
+<div class="toggle-bar">
+    <label>
+        <input type="checkbox" id="dirToggle" onchange="updateUI()">
+        Use SB / NB
+    </label>
 
-<div class="button-layout">
-    <div class="column">
-        <button class="eb" onclick="logEvent('EB Arrival')">EB Arrival</button>
-        <button class="eb" onclick="logEvent('EB Departure')">EB Departure</button>
+    <label>
+        <input type="checkbox" id="swapToggle" onchange="updateUI()">
+        Swap Sides
+    </label>
+</div>
+
+<div class="button-layout" id="layout">
+    <div class="column" id="leftCol">
+        <button class="eb" id="a1" onclick="logEvent(getLabel('A','arr'))">EB Arrival</button>
+        <button class="eb" id="d1" onclick="logEvent(getLabel('A','dep'))">EB Departure</button>
     </div>
 
-    <div class="column">
-        <button class="wb" onclick="logEvent('WB Arrival')">WB Arrival</button>
-        <button class="wb" onclick="logEvent('WB Departure')">WB Departure</button>
+    <div class="column" id="rightCol">
+        <button class="wb" id="a2" onclick="logEvent(getLabel('B','arr'))">WB Arrival</button>
+        <button class="wb" id="d2" onclick="logEvent(getLabel('B','dep'))">WB Departure</button>
     </div>
 </div>
 
@@ -106,6 +137,7 @@
 <th>Clock Time</th>
 <th>Elapsed (s)</th>
 <th>Interval (s)</th>
+<th>Delete</th>
 </tr>
 </thead>
 <tbody id="logTable"></tbody>
@@ -118,66 +150,35 @@ let startTimestamp = null;
 let baseElapsed = 0;
 let timerInterval = null;
 
-/* ================= STORAGE ================= */
-function saveData() {
-    const state = {
-        logData,
-        running,
-        startTimestamp,
-        baseElapsed
-    };
-    localStorage.setItem("trainRecorderData", JSON.stringify(state));
-}
-
-function loadData() {
-    const saved = localStorage.getItem("trainRecorderData");
-    if (!saved) return;
-
-    const state = JSON.parse(saved);
-    logData = state.logData || [];
-    running = state.running || false;
-    startTimestamp = state.startTimestamp;
-    baseElapsed = state.baseElapsed || 0;
-
-    updateTable();
-
-    if (running && startTimestamp) {
-        timerInterval = setInterval(updateTimer, 1000);
-    }
-
-    updateTimer();
-}
-
 /* ================= TIMER ================= */
+
 function getElapsedSeconds() {
-    if (!running) return Math.floor(baseElapsed/1000);
-    return Math.floor((baseElapsed + Date.now() - startTimestamp)/1000);
+    if (!running) return Math.floor(baseElapsed / 1000);
+    return Math.floor((baseElapsed + Date.now() - startTimestamp) / 1000);
 }
 
 function updateTimer() {
     document.getElementById("timer").innerText = getElapsedSeconds();
 }
 
-/* ================= START / STOP ================= */
 function startTimer() {
     if (running) return;
 
-    let now = Date.now();
     const startValue = parseInt(document.getElementById("startFrom").value);
+
     if (!isNaN(startValue)) {
         baseElapsed = startValue * 1000;
         document.getElementById("startFrom").value = "";
-    } else {
-        baseElapsed = 0;
     }
 
-    startTimestamp = now;
+    startTimestamp = Date.now();
     running = true;
 
-    // Log start event
-    logEvent("Start", now);
+    logEvent("Start", Date.now());
 
+    clearInterval(timerInterval);
     timerInterval = setInterval(updateTimer, 1000);
+    updateTimer();
     saveData();
 }
 
@@ -186,81 +187,198 @@ function stopTimer() {
 
     baseElapsed += Date.now() - startTimestamp;
     running = false;
+
     clearInterval(timerInterval);
     saveData();
 }
 
-/* ================= LOGGING ================= */
-function logEvent(label, timestamp = Date.now()) {
-    let elapsed = Math.floor((timestamp - startTimestamp + baseElapsed)/1000);
+/* ================= LABELS ================= */
 
-    // Interval since previous event
-    let interval = 0;
-    if (logData.length > 0) {
-        interval = Math.floor((timestamp - logData[0].timestamp)/1000);
+function getNames() {
+    return document.getElementById("dirToggle").checked
+        ? { A: "SB", B: "NB" }
+        : { A: "EB", B: "WB" };
+}
+
+function getLabel(side, type) {
+    const n = getNames();
+    return n[side] + (type === "arr" ? " Arrival" : " Departure");
+}
+
+/* ================= UI ================= */
+
+function updateUI() {
+    const n = getNames();
+
+    document.getElementById("a1").innerText = n.A + " Arrival";
+    document.getElementById("d1").innerText = n.A + " Departure";
+    document.getElementById("a2").innerText = n.B + " Arrival";
+    document.getElementById("d2").innerText = n.B + " Departure";
+
+    const layout = document.getElementById("layout");
+    const left = document.getElementById("leftCol");
+    const right = document.getElementById("rightCol");
+
+    if (document.getElementById("swapToggle").checked) {
+        if (layout.firstElementChild !== right) {
+            layout.insertBefore(right, left);
+        }
+    } else {
+        if (layout.firstElementChild !== left) {
+            layout.insertBefore(left, right);
+        }
     }
 
-    const entry = {
-        number: logData.length + 1,
+    saveSettings();
+}
+
+/* ================= LOGGING ================= */
+
+function logEvent(label, timestamp = Date.now()) {
+    const elapsed = Math.floor((timestamp - startTimestamp + baseElapsed) / 1000);
+
+    let interval = 0;
+    if (logData.length > 0) {
+        interval = Math.floor((timestamp - logData[0].timestamp) / 1000);
+    }
+
+    logData.unshift({
         label: label,
+        timestamp: timestamp,
         clock: new Date(timestamp).toLocaleTimeString(),
         elapsed: elapsed,
-        interval: interval,
-        timestamp: timestamp
-    };
+        interval: interval
+    });
 
-    logData.unshift(entry);
+    recompute();
     updateTable();
     saveData();
+}
+
+/* ================= TABLE ================= */
+
+function getEventOptions() {
+    const n = getNames();
+    return [
+        n.A + " Arrival",
+        n.A + " Departure",
+        n.B + " Arrival",
+        n.B + " Departure",
+        "Start"
+    ];
 }
 
 function updateTable() {
     const table = document.getElementById("logTable");
     table.innerHTML = "";
 
-    logData.forEach((entry, index) => {
-        entry.number = logData.length - index;
+    const options = getEventOptions();
 
+    logData.forEach((e, i) => {
         table.innerHTML += `
-            <tr>
-                <td>${entry.number}</td>
-                <td>${entry.label}</td>
-                <td>${entry.clock}</td>
-                <td>${entry.elapsed}</td>
-                <td>${entry.interval}</td>
-            </tr>`;
+        <tr>
+            <td>${logData.length - i}</td>
+
+            <td>
+                <select onchange="changeEvent(${i}, this.value)">
+                    ${options.map(opt =>
+                        `<option value="${opt}" ${opt === e.label ? "selected" : ""}>${opt}</option>`
+                    ).join("")}
+                </select>
+            </td>
+
+            <td>
+                ${e.clock}
+                <button onclick="adjustTime(${i}, -1)">-</button>
+                <button onclick="adjustTime(${i}, 1)">+</button>
+            </td>
+
+            <td>${e.elapsed}</td>
+            <td>${e.interval}</td>
+
+            <td>
+                <button onclick="deleteRow(${i})">🗑️</button>
+            </td>
+        </tr>`;
     });
 }
 
-/* ================= DELETE ================= */
+/* ================= EDITING ================= */
+
+function adjustTime(index, delta) {
+    if (!logData[index]) return;
+
+    logData[index].timestamp += delta * 1000;
+
+    recompute();
+    updateTable();
+    saveData();
+}
+
+function changeEvent(index, value) {
+    if (!logData[index]) return;
+
+    logData[index].label = value;
+
+    recompute();
+    updateTable();
+    saveData();
+}
+
+function deleteRow(index) {
+    if (!logData[index]) return;
+
+    const ok = confirm("Delete this entry?\n\n" + logData[index].label);
+    if (!ok) return;
+
+    logData.splice(index, 1);
+
+    recompute();
+    updateTable();
+    saveData();
+}
+
+/* ================= CORE FIX ================= */
+
+function recompute() {
+
+    logData.sort((a, b) => a.timestamp - b.timestamp);
+
+    for (let i = 0; i < logData.length; i++) {
+        const e = logData[i];
+
+        e.clock = new Date(e.timestamp).toLocaleTimeString();
+
+        if (startTimestamp) {
+            e.elapsed = Math.floor((e.timestamp - startTimestamp + baseElapsed) / 1000);
+        } else {
+            e.elapsed = 0;
+        }
+
+        if (i === 0) {
+            e.interval = 0;
+        } else {
+            const prev = logData[i - 1];
+            const diff = e.timestamp - prev.timestamp;
+            e.interval = Math.max(0, Math.floor(diff / 1000));
+        }
+    }
+
+    logData.sort((a, b) => b.timestamp - a.timestamp);
+}
+
+/* ================= ACTIONS ================= */
+
 function deleteLast() {
-    if (logData.length === 0) return;
+    if (!logData.length) return;
     if (confirm("Delete last entry?")) {
         logData.shift();
+        recompute();
         updateTable();
         saveData();
     }
 }
 
-/* ================= EXPORT ================= */
-function exportCSV() {
-    if (logData.length === 0) return;
-
-    let csv = "Number,Event,Clock Time,Elapsed (s),Interval (s)\n";
-    [...logData].reverse().forEach(e => {
-        csv += `${e.number},${e.label},${e.clock},${e.elapsed},${e.interval}\n`;
-    });
-
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "train_log.csv";
-    a.click();
-    URL.revokeObjectURL(url);
-}
-
-/* ================= RESET ================= */
 function resetData() {
     if (!confirm("Reset everything?")) return;
 
@@ -268,15 +386,86 @@ function resetData() {
     running = false;
     baseElapsed = 0;
     startTimestamp = null;
+
     clearInterval(timerInterval);
     localStorage.removeItem("trainRecorderData");
 
-    document.getElementById("timer").innerText = "0";
     updateTable();
+    document.getElementById("timer").innerText = "0";
+}
+
+/* ================= EXPORT ================= */
+
+function exportCSV() {
+    if (!logData.length) return;
+
+    let csv = "Number,Event,Clock Time,Elapsed (s),Interval (s)\n";
+
+    [...logData].reverse().forEach((e, i) => {
+        csv += `${i+1},${e.label},${e.clock},${e.elapsed},${e.interval}\n`;
+    });
+
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "train_log.csv";
+    a.click();
+
+    URL.revokeObjectURL(url);
+}
+
+/* ================= STORAGE ================= */
+
+function saveData() {
+    localStorage.setItem("trainRecorderData", JSON.stringify({
+        logData,
+        running,
+        startTimestamp,
+        baseElapsed
+    }));
+}
+
+function saveSettings() {
+    localStorage.setItem("trainRecorderSettings", JSON.stringify({
+        dir: document.getElementById("dirToggle").checked,
+        swap: document.getElementById("swapToggle").checked
+    }));
+}
+
+function loadSettings() {
+    const s = JSON.parse(localStorage.getItem("trainRecorderSettings") || "{}");
+
+    document.getElementById("dirToggle").checked = !!s.dir;
+    document.getElementById("swapToggle").checked = !!s.swap;
 }
 
 /* ================= INIT ================= */
+
+function loadData() {
+    const saved = JSON.parse(localStorage.getItem("trainRecorderData"));
+
+    if (saved) {
+        logData = saved.logData || [];
+        running = saved.running;
+        startTimestamp = saved.startTimestamp;
+        baseElapsed = saved.baseElapsed || 0;
+
+        recompute();
+        updateTable();
+
+        if (running) {
+            timerInterval = setInterval(updateTimer, 1000);
+        }
+    }
+
+    updateTimer();
+}
+
 loadData();
+loadSettings();
+updateUI();
 setInterval(updateTimer, 1000);
 </script>
 
